@@ -24,9 +24,11 @@ pgpool_*/pool_passwd
 target/
 *.class
 
-# data files (large parquet/arrow files)
+# data files (large parquet/arrow/cache files)
 data/*.parquet
 data/*.arrow
+data/cache_3way/
+data/cache*/
 
 # Java build artifacts and cached JARs
 java/lib/*.jar
