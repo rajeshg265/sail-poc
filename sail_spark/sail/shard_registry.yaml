@@ -1,0 +1,105 @@
+# Metadata Service — Shard Registry
+#
+# Single source of truth for shard topology.
+# bootstrap.py reads this at startup and auto-generates all Sail logical views.
+#
+# To add a new dataset:  add an entry under 'datasets', restart bootstrap.
+# To add a new shard:    add under 'shards', reference in dataset shard list, restart.
+# No QueryService changes. No proxy restart.
+
+shards:
+  # ── FRTB shards: time-partitioned by cobdate (TimescaleDB hypertables) ───
+  shard1:
+    host: localhost
+    port: 6432            # pgpool → TimescaleDB frtb_shard1:5440
+    database: frtb_shard1
+    key_range:
+      from: "2024-01-01"
+      to:   "2025-06-30"
+  shard2:
+    host: localhost
+    port: 6433            # pgpool → TimescaleDB frtb_shard2:5441
+    database: frtb_shard2
+    key_range:
+      from: "2025-07-01"
+      to:   "2026-12-31"
+  shard3:
+    host: localhost
+    port: 6434            # pgpool → TimescaleDB frtb_shard3:5442
+    database: frtb_shard3
+    key_range:
+      from: "2027-01-01"
+      to:   "2027-12-31"
+
+  # ── Domain shards: each risk domain in its own database (TimescaleDB) ────
+  # No key_range — all dates in a single DB, not time-partitioned.
+  # In production each would be a separate server with its own pgpool.
+  equity_shard:
+    host: localhost
+    port: 6435            # pgpool → TimescaleDB equity_db:5443
+    database: equity_db
+
+  credit_shard:
+    host: localhost
+    port: 6436            # pgpool → TimescaleDB credit_db:5444
+    database: credit_db
+
+  macro_shard:
+    host: localhost
+    port: 6437            # pgpool → TimescaleDB macro_db:5445
+    database: macro_db
+
+datasets:
+  # FRTB SA capital output — time-sharded across 3 FRTB shards
+  - name: frtb_sa_capital_output
+    table: public.frtb_sa_capital_output
+    shard_key: cobdate
+    shards: [shard1, shard2, shard3]
+
+  # Domain datasets — each in its own single database (cross-domain federation)
+  - name: equity_risk_measure
+    table: public.equity_risk_measure
+    shards: [equity_shard]
+
+  - name: credit_risk_measure
+    table: public.credit_risk_measure
+    shards: [credit_shard]
+
+  - name: macro_risk_measure
+    table: public.macro_risk_measure
+    shards: [macro_shard]
+
+broadcast_tables:
+  # Fiscal calendar dimension — replicated to all shards, joined locally
+  - name: cobdate
+    table: public.cobdate
+    source_shard: shard1
+
+  # Legal entity hierarchy — maps legal_entity_group_id to region/BU
+  - name: entity_hierarchy
+    table: public.entity_hierarchy
+    source_shard: shard1
+
+  # SDS node hierarchy — maps node_id to desk, trading book, risk pillar
+  - name: chorushierarchy
+    table: public.chorushierarchy
+    source_shard: shard1
+
+  # Pillar-node mapping — maps each node_id to its FRTB risk pillar and sensitivity type
+  - name: vw_pillar_node_mapping
+    table: public.vw_pillar_node_mapping
+    source_shard: shard1
+
+credentials:
+  shard1_user_secret:        FRTB_SHARD1_DB_USER
+  shard1_pass_secret:        FRTB_SHARD1_DB_PASSWORD
+  shard2_user_secret:        FRTB_SHARD2_DB_USER
+  shard2_pass_secret:        FRTB_SHARD2_DB_PASSWORD
+  shard3_user_secret:        FRTB_SHARD3_DB_USER
+  shard3_pass_secret:        FRTB_SHARD3_DB_PASSWORD
+  equity_shard_user_secret:  FRTB_EQUITY_DB_USER
+  equity_shard_pass_secret:  FRTB_EQUITY_DB_PASSWORD
+  credit_shard_user_secret:  FRTB_CREDIT_DB_USER
+  credit_shard_pass_secret:  FRTB_CREDIT_DB_PASSWORD
+  macro_shard_user_secret:   FRTB_MACRO_DB_USER
+  macro_shard_pass_secret:   FRTB_MACRO_DB_PASSWORD

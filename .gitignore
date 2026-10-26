@@ -1,0 +1,33 @@
+# secrets
+.secrets
+
+# runtime artifacts
+*.log
+*.pid
+*.bashpid
+__pycache__/
+*.pyc
+.DS_Store
+
+# large binaries / downloaded distributions
+apache-shardingsphere-*/
+shardingsphere-proxy.tar.gz
+spark-warehouse/
+
+# pgpool runtime
+pgpool_*/pgpool.log
+pgpool_*/pgpool.pid
+pgpool_*/pgpool.bashpid
+pgpool_*/pool_passwd
+
+# Spark/JVM build output
+target/
+*.class
+
+# data files (large parquet/arrow files)
+data/*.parquet
+data/*.arrow
+
+# Java build artifacts and cached JARs
+java/lib/*.jar
+java/target/
