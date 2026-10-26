@@ -1,0 +1,26 @@
+FROM python:3.13-slim
+
+# Java runtime for Spark executor JVMs
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    default-jre-headless \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Python deps — pyspark 3.5.x has mature K8s cluster support
+RUN pip install "pyspark==3.5.3" flask pyyaml --no-cache-dir
+
+# PostgreSQL JDBC jar — needed by both driver and executor pods for JDBC reads
+RUN mkdir -p /app/lib
+COPY postgresql-42.7.2.jar /app/lib/postgresql-42.7.2.jar
+
+# Bridge script
+COPY spark_bridge_k8s.py csm.py /app/
+
+# Spark K8s executor entrypoint — called as `executor` by Spark's K8s launcher
+COPY executor /usr/local/bin/executor
+RUN chmod +x /usr/local/bin/executor
+
+WORKDIR /app
+ENV PYSPARK_PYTHON=python3
+ENV PYSPARK_DRIVER_PYTHON=python3
+
+CMD ["python3", "/app/spark_bridge_k8s.py"]

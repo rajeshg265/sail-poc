@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sail-driver
+  namespace: default
+  labels:
+    app: sail-driver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sail-driver
+  template:
+    metadata:
+      labels:
+        app: sail-driver
+    spec:
+      serviceAccountName: sail-driver
+      containers:
+      - name: sail
+        image: host.docker.internal:5000/sail-worker-k8s:0.7.2
+        imagePullPolicy: IfNotPresent
+        command: ["/usr/local/bin/sail", "spark", "server", "--ip", "0.0.0.0", "--port", "50060"]
+        ports:
+        - name: grpc
+          containerPort: 50060
+        - name: arrow-driver
+          containerPort: 7074
+        env:
+        - name: SAIL_MODE
+          value: "kubernetes-cluster"
+        - name: SAIL_CLUSTER__WORKER_INITIAL_COUNT
+          value: "0"
+        - name: SAIL_CLUSTER__WORKER_MAX_COUNT
+          value: "3"
+        - name: SAIL_CLUSTER__WORKER_TASK_SLOTS
+          value: "4"
+        - name: SAIL_CLUSTER__WORKER_MAX_IDLE_TIME_SECS
+          value: "3600"
+        - name: SAIL_CLUSTER__WORKER_LAUNCH_TIMEOUT_SECS
+          value: "120"
+        - name: SAIL_CLUSTER__TASK_LAUNCH_TIMEOUT_SECS
+          value: "120"
+        - name: SAIL_CLUSTER__DRIVER_LISTEN_HOST
+          value: "0.0.0.0"
+        - name: SAIL_CLUSTER__DRIVER_LISTEN_PORT
+          value: "7074"
+        # Driver announces its own pod IP so workers can reach it within the K8s network
+        - name: SAIL_CLUSTER__DRIVER_EXTERNAL_HOST
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: SAIL_CLUSTER__DRIVER_EXTERNAL_PORT
+          value: "7074"
+        - name: SAIL_CLUSTER__SHUFFLE_BACKEND__FLIGHT__COMPRESSION
+          value: "none"
+        - name: SAIL_SPARK__SESSION_TIMEOUT_SECS
+          value: "86400"
+        - name: SAIL_KUBERNETES__IMAGE
+          value: "host.docker.internal:5000/sail-worker-k8s:0.7.2"
+        - name: SAIL_KUBERNETES__IMAGE_PULL_POLICY
+          value: "IfNotPresent"
+        - name: SAIL_KUBERNETES__NAMESPACE
+          value: "default"
+        - name: SAIL_KUBERNETES__DRIVER_POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: SAIL_KUBERNETES__WORKER_SERVICE_ACCOUNT_NAME
+          value: "sail-driver"
+        - name: SAIL_KUBERNETES__WORKER_POD_NAME_PREFIX
+          value: "sail-k8s-worker-"
+        - name: SAIL_KUBERNETES__WORKER_POD_TEMPLATE
+          value: '{"spec":{"containers":[{"name":"worker","resources":{"requests":{"memory":"1Gi","cpu":"500m"},"limits":{"memory":"3Gi","cpu":"2"}}}]}}'
+        - name: RUST_LOG
+          value: "info"
+        readinessProbe:
+          tcpSocket:
+            port: 50060
+          initialDelaySeconds: 5
+          periodSeconds: 3
+          failureThreshold: 20
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "4Gi"
+            cpu: "4"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sail-driver-svc
+  namespace: default
+spec:
+  selector:
+    app: sail-driver
+  ports:
+  - name: grpc
+    port: 50060
+    targetPort: 50060
+  - name: arrow-driver
+    port: 7074
+    targetPort: 7074

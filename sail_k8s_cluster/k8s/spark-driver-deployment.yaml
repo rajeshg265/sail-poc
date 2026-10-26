@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spark-driver
+  namespace: default
+  labels:
+    app: spark-driver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spark-driver
+  template:
+    metadata:
+      labels:
+        app: spark-driver
+    spec:
+      serviceAccountName: sail-driver
+      containers:
+      - name: spark-bridge
+        image: host.docker.internal:5000/spark-k8s:v5
+        imagePullPolicy: IfNotPresent
+        command: ["python3", "/app/spark_bridge_k8s.py"]
+        ports:
+        - name: bridge
+          containerPort: 8104
+        - name: spark-driver
+          containerPort: 7077
+        - name: block-manager
+          containerPort: 7078
+        env:
+        # Pod IP injected via downward API — used as spark.driver.host so executors
+        # connect directly to the pod (K8s Services only route to Ready pods, but
+        # executors try to connect before the readiness probe passes).
+        - name: MY_POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: SPARK_DRIVER_HOST
+          value: "USE_POD_IP"
+        - name: SPARK_K8S_IMAGE
+          value: "host.docker.internal:5000/spark-k8s:v5"
+        - name: SPARK_BRIDGE_PORT
+          value: "8104"
+        - name: FRTB_CLUSTER_SHARD1_DB_USER
+          value: "rajeshganta"
+        - name: FRTB_CLUSTER_SHARD1_DB_PASSWORD
+          value: "frtb_local"
+        - name: FRTB_CLUSTER_SHARD2_DB_USER
+          value: "rajeshganta"
+        - name: FRTB_CLUSTER_SHARD2_DB_PASSWORD
+          value: "frtb_local"
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1"
+          limits:
+            memory: "4Gi"
+            cpu: "4"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8104
+          initialDelaySeconds: 60
+          periodSeconds: 5
+          failureThreshold: 60
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spark-driver-svc
+  namespace: default
+spec:
+  selector:
+    app: spark-driver
+  ports:
+  - name: bridge
+    port: 8104
+    targetPort: 8104
+  - name: spark-driver
+    port: 7077
+    targetPort: 7077
+  - name: block-manager
+    port: 7078
+    targetPort: 7078

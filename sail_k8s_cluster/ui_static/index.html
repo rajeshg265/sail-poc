@@ -1,0 +1,726 @@
+<title>FRTB K8s Cluster Benchmark</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap">
+
+<style>
+:root {
+  --bg:       #0d1117;
+  --surface:  #161b22;
+  --surface2: #1c2128;
+  --border:   #21262d;
+  --fg:       #e6edf3;
+  --muted:    #7d8590;
+  --sc:       #39d353;
+  --sc-dim:   #1a3a20;
+  --sc-glow:  rgba(57,211,83,.15);
+  --jvm:      #f97316;
+  --jvm-dim:  #3a1f0d;
+  --jvm-glow: rgba(249,115,22,.15);
+  --tag-bg:   #21262d;
+  --mono:     'JetBrains Mono', monospace;
+  --sans:     'Inter', system-ui, sans-serif;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg:#f6f8fa;--surface:#ffffff;--surface2:#f0f2f4;--border:#d0d7de;
+    --fg:#1f2328;--muted:#656d76;--sc-dim:#dcfce7;--sc-glow:rgba(57,211,83,.12);
+    --jvm-dim:#fff7ed;--jvm-glow:rgba(249,115,22,.12);--tag-bg:#eaeef2;
+    color-scheme:light;
+  }
+}
+:root[data-theme="light"] {
+  --bg:#f6f8fa;--surface:#ffffff;--surface2:#f0f2f4;--border:#d0d7de;
+  --fg:#1f2328;--muted:#656d76;--sc-dim:#dcfce7;--sc-glow:rgba(57,211,83,.12);
+  --jvm-dim:#fff7ed;--jvm-glow:rgba(249,115,22,.12);--tag-bg:#eaeef2;
+  color-scheme:light;
+}
+
+*,*::before,*::after{box-sizing:border-box;}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:13px;display:flex;flex-direction:column;height:100%;min-height:100vh;}
+button{cursor:pointer;font-family:var(--sans);}
+code,pre,.mono{font-family:var(--mono);}
+
+/* Nav */
+.nav{position:sticky;top:env(safe-area-inset-top,0px);z-index:50;display:flex;align-items:center;gap:12px;padding:0 16px;height:46px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0;}
+.nav-title{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.3px;}
+.nav-sub{font-size:11px;color:var(--muted);padding:2px 7px;background:var(--surface2);border-radius:4px;border:1px solid var(--border);}
+.nav-spacer{flex:1;}
+.health-dot{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:600;letter-spacing:.3px;}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--muted);transition:background .3s;}
+.dot.ok{background:var(--sc);box-shadow:0 0 4px var(--sc);}
+.dot.err{background:#f85149;}
+.theme-btn{background:none;border:1px solid var(--border);border-radius:4px;color:var(--muted);padding:3px 7px;font-size:11px;}
+
+/* Layout */
+.layout{display:flex;flex:1;overflow:hidden;}
+
+/* Sidebar */
+.sidebar{width:220px;min-width:220px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
+.sidebar-hdr{padding:10px 14px 6px;font-size:9px;font-weight:700;letter-spacing:.9px;text-transform:uppercase;color:var(--muted);flex-shrink:0;}
+.query-list{flex:1;overflow-y:auto;}
+.query-item{padding:9px 14px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s;}
+.query-item:hover{background:var(--surface2);}
+.query-item.active{background:var(--surface2);border-left:2px solid var(--sc);padding-left:12px;}
+.query-label{font-size:12px;font-weight:600;line-height:1.3;}
+.query-tag{display:inline-block;margin-top:4px;font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);background:var(--tag-bg);border-radius:3px;padding:1px 5px;}
+
+/* Main */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;}
+
+/* SQL panel */
+.sql-panel{flex-shrink:0;border-bottom:1px solid var(--border);padding:10px 16px 8px;display:flex;flex-direction:column;gap:6px;background:var(--surface);}
+.sql-label{font-size:9px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);}
+.sql-code{font-family:var(--mono);font-size:12px;line-height:1.55;color:var(--fg);background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:8px 10px;white-space:pre;overflow-x:auto;max-height:120px;overflow-y:auto;}
+.sql-actions{display:flex;gap:8px;align-items:center;}
+.btn{display:inline-flex;align-items:center;gap:5px;border:none;border-radius:5px;font-size:12px;font-weight:600;padding:5px 13px;transition:opacity .15s;}
+.btn:disabled{opacity:.4;cursor:not-allowed;}
+.btn-run{background:var(--sc);color:#0d1117;}
+.btn-bench{background:var(--jvm);color:#0d1117;}
+.run-status{font-size:11px;color:var(--muted);font-family:var(--mono);}
+
+/* Tabs */
+.tabs-bar{display:flex;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0;padding:0 16px;}
+.tab{padding:8px 16px;font-size:12px;font-weight:600;color:var(--muted);border-bottom:2px solid transparent;cursor:pointer;transition:color .15s;margin-bottom:-1px;white-space:nowrap;}
+.tab:hover{color:var(--fg);}
+.tab.active-sc {color:var(--sc);border-bottom-color:var(--sc);}
+.tab.active-jvm{color:var(--jvm);border-bottom-color:var(--jvm);}
+.tab.active-comb{color:var(--fg);border-bottom-color:var(--fg);}
+
+/* Results */
+.results-area{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:14px;}
+
+/* Engine timing card */
+.timing-card{background:var(--surface);border:1px solid var(--border);border-radius:7px;overflow:hidden;}
+.timing-card-hdr{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);}
+.timing-engine-name{font-size:14px;font-weight:700;}
+.timing-ms{font-family:var(--mono);font-size:22px;font-weight:700;margin-left:auto;}
+.timing-rows{font-size:11px;color:var(--muted);padding:6px 14px;}
+
+/* Benchmark stats */
+.bench-title{font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);}
+
+/* Timing table */
+.timing-table-wrap{overflow-x:auto;}
+.timing-table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums;}
+.timing-table th{padding:5px 12px;text-align:left;font-size:9px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);}
+.timing-table td{padding:8px 12px;border-bottom:1px solid var(--border);}
+.timing-table tr:last-child td{border-bottom:none;}
+.winner{font-weight:700;}
+.winner-sc{color:var(--sc);}
+.winner-jvm{color:var(--jvm);}
+
+/* Bar chart */
+.bar-section{display:flex;flex-direction:column;gap:6px;}
+.bar-row{display:flex;align-items:center;gap:8px;}
+.bar-label{font-size:11px;font-weight:600;width:70px;flex-shrink:0;color:var(--muted);}
+.bar-track{flex:1;height:15px;background:var(--surface2);border-radius:3px;overflow:hidden;}
+.bar-fill{height:100%;border-radius:3px;display:flex;align-items:center;justify-content:flex-end;padding-right:5px;transition:width .4s ease;}
+.bar-val{font-family:var(--mono);font-size:10px;font-weight:700;color:#0d1117;white-space:nowrap;}
+.bar-val-ext{font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;min-width:65px;text-align:right;}
+
+/* Sparkline */
+.spark-wrap{display:flex;flex-direction:column;gap:4px;}
+.spark-row{display:flex;align-items:center;gap:6px;}
+.spark-engine{font-size:11px;font-weight:600;width:80px;flex-shrink:0;}
+.spark-track{flex:1;display:flex;gap:2px;align-items:flex-end;height:28px;}
+.spark-bar{flex:1;border-radius:2px 2px 0 0;min-width:4px;}
+.spark-summary{font-family:var(--mono);font-size:10px;color:var(--muted);min-width:65px;text-align:right;}
+
+/* Resource grid */
+.resource-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.resource-card{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 12px;}
+.resource-label{font-size:9px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;}
+
+/* Combined cards */
+.engine-cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.engine-card{background:var(--surface);border:1px solid var(--border);border-radius:7px;overflow:hidden;}
+.engine-card-hdr{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border);}
+.engine-name{font-size:12px;font-weight:700;}
+.engine-badge{margin-left:auto;font-family:var(--mono);font-size:13px;font-weight:700;padding:2px 8px;border-radius:4px;}
+.sc-badge{background:var(--sc-dim);color:var(--sc);}
+.jvm-badge{background:var(--jvm-dim);color:var(--jvm);}
+
+/* Result table */
+.result-table-wrap{overflow-x:auto;}
+.result-table{border-collapse:collapse;width:100%;font-size:11px;font-variant-numeric:tabular-nums;}
+.result-table th{padding:5px 10px;text-align:left;font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);background:var(--surface2);border-bottom:1px solid var(--border);white-space:nowrap;}
+.result-table td{padding:5px 10px;border-bottom:1px solid var(--border);font-family:var(--mono);white-space:nowrap;}
+.result-table tr:last-child td{border-bottom:none;}
+.result-table tr:nth-child(even) td{background:var(--surface2);}
+
+/* Speedup banner */
+.speedup-banner{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:7px;border:1px solid var(--border);background:var(--surface);}
+.speedup-label{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;}
+.speedup-val{font-size:18px;font-weight:700;font-family:var(--mono);}
+
+/* Empty */
+.empty{text-align:center;color:var(--muted);padding:40px 16px;font-size:13px;display:flex;flex-direction:column;align-items:center;gap:8px;}
+.empty-icon{font-size:28px;opacity:.4;}
+.loading{color:var(--muted);font-family:var(--mono);font-size:12px;padding:20px 0;}
+
+/* Resize handles */
+.resizer-h{width:5px;flex-shrink:0;cursor:ew-resize;background:var(--border);transition:background .15s;position:relative;z-index:10;}
+.resizer-h:hover,.resizer-h.dragging{background:var(--muted);}
+.resizer-v{height:5px;flex-shrink:0;cursor:ns-resize;background:var(--border);transition:background .15s;}
+.resizer-v:hover,.resizer-v.dragging{background:var(--muted);}
+
+@media(max-width:700px){
+  .sidebar{width:0;min-width:0;display:none;}
+  .resizer-h{display:none;}
+  .engine-cards{grid-template-columns:1fr;}
+  .resource-grid{grid-template-columns:1fr;}
+}
+</style>
+
+<nav class="nav">
+  <span class="nav-title">FRTB K8s Cluster Benchmark</span>
+  <span class="nav-sub">4.38M rows · 2 shards</span>
+  <span class="nav-spacer"></span>
+  <span class="health-dot"><span class="dot" id="dotSC"></span>Sail K8s</span>
+  <span class="health-dot"><span class="dot" id="dotJVM"></span>Spark JVM</span>
+  <button class="theme-btn" onclick="toggleTheme()">◑</button>
+</nav>
+
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-hdr">Queries</div>
+    <div class="query-list" id="queryList"></div>
+  </aside>
+  <div class="resizer-h" id="resizerH"></div>
+
+  <main class="main">
+    <div class="sql-panel">
+      <div class="sql-label">SQL</div>
+      <pre class="sql-code" id="sqlCode">← Select a query</pre>
+      <div class="resizer-v" id="resizerV"></div>
+      <div class="sql-actions">
+        <button class="btn btn-run"   id="btnSingle" onclick="runSingle()"    disabled>▶ Run Single</button>
+        <button class="btn btn-bench" id="btnBench"  onclick="runBenchmark()" disabled>⏱ Benchmark (10×)</button>
+        <span class="run-status" id="runStatus"></span>
+      </div>
+    </div>
+
+    <!-- Result tabs -->
+    <div class="tabs-bar" id="tabsBar">
+      <div class="tab active-sc"   id="tabSC"   onclick="switchTab('sc')">Sail K8s</div>
+      <div class="tab"             id="tabJVM"  onclick="switchTab('jvm')">Spark JVM</div>
+      <div class="tab"             id="tabComb" onclick="switchTab('comb')">Combined</div>
+    </div>
+
+    <div class="results-area" id="resultsArea">
+      <div class="empty">
+        <div class="empty-icon">⚡</div>
+        <div>Select a query then run</div>
+        <div style="font-size:11px;color:var(--muted)">Run Single for a quick compare · Benchmark (10×) for p99 + CPU/memory</div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+const QUERIES = [];
+let activeQuery = null;
+let activeTab   = 'sc';   // 'sc' | 'jvm' | 'comb'
+let lastResult  = null;   // {type:'single'|'bench', sc, jvm}
+
+// ── Theme ──────────────────────────────────────────────────────────────────
+function toggleTheme() {
+  const r = document.documentElement;
+  const cur = r.dataset.theme;
+  r.dataset.theme = (cur === 'dark') ? 'light' : (cur === 'light') ? '' : 'dark';
+}
+
+// ── Health polling ─────────────────────────────────────────────────────────
+async function pollHealth() {
+  try {
+    const s = await fetch('/api/health').then(r => r.json());
+    const scOk  = s['sc_arrow'] === 'ok';
+    const jvmOk = s['spark_jvm'] === 'ok';
+    document.getElementById('dotSC').className  = 'dot ' + (scOk  ? 'ok' : 'err');
+    document.getElementById('dotJVM').className = 'dot ' + (jvmOk ? 'ok' : 'err');
+  } catch {}
+}
+pollHealth();
+setInterval(pollHealth, 15000);
+
+// ── Load queries ───────────────────────────────────────────────────────────
+async function loadQueries() {
+  try {
+    const qs = await fetch('/api/queries').then(r => r.json());
+    QUERIES.length = 0;
+    QUERIES.push(...qs);
+    renderSidebar();
+    if (QUERIES.length) selectQuery(QUERIES[0].id);  // auto-select first
+  } catch {
+    document.getElementById('queryList').innerHTML =
+      '<div style="padding:12px;color:var(--muted);font-size:11px">Could not load queries</div>';
+  }
+}
+loadQueries();
+
+function renderSidebar() {
+  document.getElementById('queryList').innerHTML = QUERIES.map(q => `
+    <div class="query-item" id="qi_${q.id}" onclick="selectQuery('${q.id}')">
+      <div class="query-label">${q.label}</div>
+      <span class="query-tag">${q.tag}</span>
+    </div>`).join('');
+}
+
+function selectQuery(id) {
+  activeQuery = QUERIES.find(q => q.id === id);
+  document.querySelectorAll('.query-item').forEach(el => el.classList.remove('active'));
+  document.getElementById('qi_' + id)?.classList.add('active');
+  document.getElementById('sqlCode').textContent = activeQuery.sql;
+  document.getElementById('btnSingle').disabled = false;
+  document.getElementById('btnBench').disabled  = false;
+  lastResult = null;
+  showEmpty();
+}
+
+// ── Tabs ───────────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  activeTab = tab;
+  ['sc','jvm','comb'].forEach(t => {
+    const el = document.getElementById('tab' + {sc:'SC',jvm:'JVM',comb:'Comb'}[t]);
+    el.className = 'tab' + (t === tab ? ' active-' + (t === 'comb' ? 'comb' : t) : '');
+  });
+  if (!lastResult) { showEmpty(); return; }
+
+  // Only render if this tab's engine actually has results
+  const d = lastResult.data; // bench
+  const hasEngineData =
+    lastResult.type === 'single'
+      ? (tab === 'sc' && lastResult.sc) || (tab === 'jvm' && lastResult.jvm) ||
+        (tab === 'comb' && (lastResult.sc || lastResult.jvm))
+      : (tab === 'sc' && d?.sc_arrow) || (tab === 'jvm' && d?.spark_jvm) ||
+        (tab === 'comb' && (d?.sc_arrow || d?.spark_jvm));
+
+  if (!hasEngineData) {
+    const name = tab === 'sc' ? 'Sail K8s' : tab === 'jvm' ? 'Spark JVM' : 'either engine';
+    showEmpty(`No ${name} results yet — select the tab and click ▶ Run Single or ⏱ Benchmark`);
+    return;
+  }
+  renderCurrentTab();
+}
+
+function renderCurrentTab() {
+  if (!lastResult) return;
+  if (lastResult.type === 'single') renderSingleTab(lastResult.sc, lastResult.jvm);
+  else renderBenchTab(lastResult.data);
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function fmt(ms)   { return ms == null ? '—' : ms.toFixed(1) + ' ms'; }
+function fmtMB(mb) { return mb == null ? '—' : mb.toFixed(0) + ' MB'; }
+function fmtCPU(c) { return c  == null ? '—' : c.toFixed(1)  + '%';   }
+
+function setBusy(busy, msg = '') {
+  document.getElementById('btnSingle').disabled = busy || !activeQuery;
+  document.getElementById('btnBench').disabled  = busy || !activeQuery;
+  document.getElementById('runStatus').textContent = busy ? msg : '';
+}
+
+function showEmpty(msg = 'Run a query to see results') {
+  document.getElementById('resultsArea').innerHTML =
+    `<div class="empty"><div class="empty-icon">⚡</div><div>${msg}</div></div>`;
+}
+
+function renderTable(rows, title = '') {
+  if (!rows || !rows.length) return '<div style="color:var(--muted);font-size:11px;padding:8px 0">No rows returned</div>';
+  const cols = Object.keys(rows[0]);
+  return `
+    ${title ? `<div class="bench-title" style="margin-bottom:6px">${title}</div>` : ''}
+    <div class="result-table-wrap">
+      <table class="result-table">
+        <thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead>
+        <tbody>${rows.map(r =>
+          `<tr>${cols.map(c => `<td>${r[c] == null ? '' : r[c]}</td>`).join('')}</tr>`
+        ).join('')}</tbody>
+      </table>
+    </div>`;
+}
+
+// ── Single run ─────────────────────────────────────────────────────────────
+async function runSingle() {
+  if (!activeQuery) return;
+
+  // Run only the engine(s) relevant to the active tab
+  const runSC  = activeTab === 'sc'   || activeTab === 'comb';
+  const runJVM = activeTab === 'jvm'  || activeTab === 'comb';
+  const label  = activeTab === 'comb' ? 'both engines' : (activeTab === 'sc' ? 'Sail K8s' : 'Spark JVM');
+
+  setBusy(true, `running ${label}…`);
+  showEmpty(`Running on ${label}…`);
+
+  const exec = (engine) => fetch('/api/execute', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({sql: activeQuery.sql, engine}),
+  });
+
+  // Carry forward existing result for the engine we're NOT running
+  const prevSC  = lastResult?.sc;
+  const prevJVM = lastResult?.jvm;
+
+  const [scRes, jvmRes] = await Promise.allSettled([
+    runSC  ? exec('sc_arrow')  : Promise.resolve(null),
+    runJVM ? exec('spark_jvm') : Promise.resolve(null),
+  ]);
+
+  const sc  = runSC  ? (scRes.status  === 'fulfilled' && scRes.value  ? await scRes.value.json()  : {error: String(scRes.reason)})  : prevSC  || null;
+  const jvm = runJVM ? (jvmRes.status === 'fulfilled' && jvmRes.value ? await jvmRes.value.json() : {error: String(jvmRes.reason)}) : prevJVM || null;
+
+  lastResult = {type: 'single', sc, jvm};
+  setBusy(false);
+  renderSingleTab(sc, jvm);
+}
+
+function renderSingleTab(sc, jvm) {
+  const area = document.getElementById('resultsArea');
+  if (activeTab === 'sc') {
+    if (!sc) { showEmpty('No Sail K8s results yet — click ▶ Run Single on this tab'); return; }
+    area.innerHTML = enginePanel('Sail K8s', sc, 'sc');
+  } else if (activeTab === 'jvm') {
+    if (!jvm) { showEmpty('No Spark JVM results yet — click ▶ Run Single on this tab'); return; }
+    area.innerHTML = enginePanel('Spark JVM', jvm, 'jvm');
+  } else {
+    // Combined — may have partial data
+    const scErr  = !sc || !!sc.error;
+    const jvmErr = !jvm || !!jvm.error;
+    let banner = '';
+    if (!scErr && !jvmErr) {
+      const scFaster = sc.elapsed_ms < jvm.elapsed_ms;
+      const ratio    = scFaster ? jvm.elapsed_ms/sc.elapsed_ms : sc.elapsed_ms/jvm.elapsed_ms;
+      const winner   = scFaster ? 'Sail K8s' : 'Spark JVM';
+      const color    = scFaster ? 'var(--sc)' : 'var(--jvm)';
+      banner = `<div class="speedup-banner">
+        <span class="speedup-label">Winner</span>
+        <span class="speedup-val" style="color:${color}">${winner}</span>
+        <span style="font-size:13px;color:var(--muted);font-family:var(--mono)">${ratio.toFixed(2)}× faster</span>
+      </div>`;
+    }
+    const scPlaceholder  = !sc  ? `<div class="engine-card" style="opacity:.45"><div class="engine-card-hdr"><span class="engine-name" style="color:var(--sc)">Sail K8s</span><span class="engine-badge" style="background:var(--tag-bg);color:var(--muted)">not run</span></div></div>` : singleCard('Sail K8s', sc, 'sc');
+    const jvmPlaceholder = !jvm ? `<div class="engine-card" style="opacity:.45"><div class="engine-card-hdr"><span class="engine-name" style="color:var(--jvm)">Spark JVM</span><span class="engine-badge" style="background:var(--tag-bg);color:var(--muted)">not run</span></div></div>` : singleCard('Spark JVM', jvm, 'jvm');
+    area.innerHTML = `
+      ${banner}
+      <div class="engine-cards">
+        ${scPlaceholder}
+        ${jvmPlaceholder}
+      </div>
+      ${!scErr && sc ? renderTable(sc.rows, 'Result — Sail K8s') : ''}
+      ${!jvmErr && jvm && (scErr || JSON.stringify(jvm.rows) !== JSON.stringify(sc?.rows))
+          ? renderTable(jvm.rows, 'Result — Spark JVM') : ''}`;
+  }
+}
+
+function enginePanel(name, result, type) {
+  const color  = type === 'sc' ? 'var(--sc)'  : 'var(--jvm)';
+  const dimBg  = type === 'sc' ? 'var(--sc-dim)' : 'var(--jvm-dim)';
+  if (result.error) {
+    return `<div class="timing-card">
+      <div class="timing-card-hdr" style="background:var(--surface2)">
+        <span class="timing-engine-name" style="color:${color}">${name}</span>
+        <span class="timing-ms" style="color:#f85149">ERROR</span>
+      </div>
+      <div style="padding:10px 14px;font-family:var(--mono);font-size:11px;color:#f85149">${result.error}</div>
+    </div>`;
+  }
+  return `
+    <div class="timing-card">
+      <div class="timing-card-hdr" style="background:${dimBg}">
+        <span class="timing-engine-name" style="color:${color}">${name}</span>
+        <span class="timing-ms" style="color:${color}">${fmt(result.elapsed_ms)}</span>
+      </div>
+      <div class="timing-rows">${result.row_count} row${result.row_count!==1?'s':''} returned</div>
+    </div>
+    ${renderTable(result.rows, 'Result')}`;
+}
+
+function singleCard(name, result, type) {
+  const color = type === 'sc' ? 'var(--sc)' : 'var(--jvm)';
+  const dimBg = type === 'sc' ? 'var(--sc-dim)' : 'var(--jvm-dim)';
+  if (result.error) {
+    return `<div class="engine-card">
+      <div class="engine-card-hdr">
+        <span class="engine-name" style="color:${color}">${name}</span>
+        <span class="engine-badge" style="background:var(--tag-bg);color:#f85149">ERROR</span>
+      </div>
+      <div style="padding:8px 12px;font-size:11px;color:#f85149;font-family:var(--mono)">${result.error}</div>
+    </div>`;
+  }
+  return `<div class="engine-card">
+    <div class="engine-card-hdr" style="background:${dimBg}">
+      <span class="engine-name" style="color:${color}">${name}</span>
+      <span class="engine-badge ${type}-badge">${fmt(result.elapsed_ms)}</span>
+    </div>
+    <div style="padding:7px 12px;font-size:11px;color:var(--muted)">${result.row_count} row${result.row_count!==1?'s':''}</div>
+  </div>`;
+}
+
+// ── Benchmark ──────────────────────────────────────────────────────────────
+async function runBenchmark() {
+  if (!activeQuery) return;
+  const engines = activeTab === 'sc' ? 'sc_arrow' : activeTab === 'jvm' ? 'spark_jvm' : 'both';
+  const label   = activeTab === 'sc' ? 'Sail K8s' : activeTab === 'jvm' ? 'Spark JVM' : 'both engines';
+  const runs    = activeTab === 'comb' ? '20 executions total' : '10 executions';
+  setBusy(true, `benchmarking ${label}…`);
+  showEmpty(`Running benchmark (${runs})…`);
+
+  let data;
+  try {
+    const r = await fetch('/api/benchmark', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({query_id: activeQuery.id, sql: activeQuery.sql, engines}),
+    });
+    data = await r.json();
+  } catch(e) {
+    setBusy(false);
+    showEmpty('Benchmark failed: ' + e.message);
+    return;
+  }
+  // Merge with existing lastResult so switching tabs doesn't lose the other engine's data
+  const prev = lastResult?.type === 'bench' ? lastResult.data : {};
+  lastResult = {type:'bench', data: {...prev, ...data, sc_arrow: data.sc_arrow || prev.sc_arrow, spark_jvm: data.spark_jvm || prev.spark_jvm}};
+  setBusy(false);
+  renderBenchTab(lastResult.data);
+}
+
+function renderBenchTab(data) {
+  const area = document.getElementById('resultsArea');
+  const sc   = data.sc_arrow;
+  const jvm  = data.spark_jvm;
+
+  if (activeTab === 'sc') {
+    if (!sc) { area.innerHTML = '<div style="padding:24px;color:var(--muted)">No Sail K8s results yet — click Benchmark to run.</div>'; return; }
+    area.innerHTML = engineBenchPanel('Sail K8s', sc, 'sc', sc, jvm);
+  } else if (activeTab === 'jvm') {
+    if (!jvm) { area.innerHTML = '<div style="padding:24px;color:var(--muted)">No Spark JVM results yet — click Benchmark to run.</div>'; return; }
+    area.innerHTML = engineBenchPanel('Spark JVM', jvm, 'jvm', sc, jvm);
+  } else {
+    // Combined comparison — need both engines
+    if (!sc || !jvm) {
+      area.innerHTML = '<div style="padding:24px;color:var(--muted)">Run Benchmark on Sail K8s and Spark JVM tabs first to see comparison.</div>';
+      return;
+    }
+    const p99Win  = sc.p99_ms  < jvm.p99_ms  ? 'sc' : 'jvm';
+    const meanWin = sc.mean_ms < jvm.mean_ms ? 'sc' : 'jvm';
+    const minWin  = sc.min_ms  < jvm.min_ms  ? 'sc' : 'jvm';
+    const rssWin  = sc.rss_mb  < jvm.rss_mb  ? 'sc' : 'jvm';
+    const ratio   = p99Win === 'sc' ? jvm.p99_ms/sc.p99_ms : sc.p99_ms/jvm.p99_ms;
+    const winner  = p99Win === 'sc' ? 'Sail K8s' : 'Spark JVM';
+    const wColor  = p99Win === 'sc' ? 'var(--sc)' : 'var(--jvm)';
+    const maxMs   = Math.max(sc.p99_ms, jvm.p99_ms, sc.mean_ms, jvm.mean_ms) * 1.1 || 1;
+    const maxRss  = Math.max(sc.rss_mb, jvm.rss_mb) * 1.1 || 1;
+    const maxCpu  = Math.max(sc.cpu_pct, jvm.cpu_pct) * 1.1 || 1;
+
+    area.innerHTML = `
+      <div class="speedup-banner">
+        <span class="speedup-label">p99 Winner</span>
+        <span class="speedup-val" style="color:${wColor}">${winner}</span>
+        <span style="font-size:13px;color:var(--muted);font-family:var(--mono)">${ratio.toFixed(2)}× faster</span>
+        <span style="font-size:11px;color:var(--muted);margin-left:auto">${sc.successful}/${data.runs} Sail K8s · ${jvm.successful}/${data.runs} JVM succeeded (1 warm-up excluded)</span>
+      </div>
+
+      <div>
+        <div class="bench-title" style="margin-bottom:8px">Latency (ms)</div>
+        <div class="timing-table-wrap">
+          <table class="timing-table">
+            <thead><tr>
+              <th>Engine</th><th>p99</th><th>Mean</th><th>Median</th><th>Min</th><th>Max</th><th>CPU%</th><th>Memory</th>
+            </tr></thead>
+            <tbody>
+              <tr>
+                <td style="color:var(--sc);font-weight:700">Sail K8s</td>
+                <td class="winner${p99Win==='sc'?' winner-sc':''}">${fmt(sc.p99_ms)}</td>
+                <td class="winner${meanWin==='sc'?' winner-sc':''}">${fmt(sc.mean_ms)}</td>
+                <td>${fmt(sc.median_ms)}</td>
+                <td class="winner${minWin==='sc'?' winner-sc':''}">${fmt(sc.min_ms)}</td>
+                <td>${fmt(sc.max_ms)}</td>
+                <td>${fmtCPU(sc.cpu_pct)}</td>
+                <td class="winner${rssWin==='sc'?' winner-sc':''}">${fmtMB(sc.rss_mb)}</td>
+              </tr>
+              <tr>
+                <td style="color:var(--jvm);font-weight:700">Spark JVM</td>
+                <td class="winner${p99Win==='jvm'?' winner-jvm':''}">${fmt(jvm.p99_ms)}</td>
+                <td class="winner${meanWin==='jvm'?' winner-jvm':''}">${fmt(jvm.mean_ms)}</td>
+                <td>${fmt(jvm.median_ms)}</td>
+                <td class="winner${minWin==='jvm'?' winner-jvm':''}">${fmt(jvm.min_ms)}</td>
+                <td>${fmt(jvm.max_ms)}</td>
+                <td>${fmtCPU(jvm.cpu_pct)}</td>
+                <td class="winner${rssWin==='jvm'?' winner-jvm':''}">${fmtMB(jvm.rss_mb)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div>
+        <div class="bench-title" style="margin-bottom:8px">p99 · Mean · Min</div>
+        <div class="bar-section">
+          ${dualBar('p99',  sc.p99_ms,  jvm.p99_ms,  maxMs, fmt)}
+          ${dualBar('Mean', sc.mean_ms, jvm.mean_ms, maxMs, fmt)}
+          ${dualBar('Min',  sc.min_ms,  jvm.min_ms,  maxMs, fmt)}
+        </div>
+      </div>
+
+      <div>
+        <div class="bench-title" style="margin-bottom:8px">Per-run timings (${data.runs} runs)</div>
+        <div class="spark-wrap">
+          ${sparkRow('Sail K8s',  sc.timings,  'var(--sc)',  sc.p99_ms)}
+          ${sparkRow('Spark JVM', jvm.timings, 'var(--jvm)', jvm.p99_ms)}
+        </div>
+      </div>
+
+      <div class="resource-grid">
+        <div class="resource-card">
+          <div class="resource-label">Memory RSS</div>
+          ${singleBar('Sail K8s',  sc.rss_mb,  maxRss, 'var(--sc)',  fmtMB)}
+          ${singleBar('Spark JVM', jvm.rss_mb, maxRss, 'var(--jvm)', fmtMB)}
+        </div>
+        <div class="resource-card">
+          <div class="resource-label">CPU %</div>
+          ${singleBar('Sail K8s',  sc.cpu_pct,  maxCpu, 'var(--sc)',  fmtCPU)}
+          ${singleBar('Spark JVM', jvm.cpu_pct, maxCpu, 'var(--jvm)', fmtCPU)}
+        </div>
+      </div>
+      ${sc.rows && sc.rows.length ? renderTable(sc.rows, 'Result sample (Sail K8s)') : ''}`;
+  }
+}
+
+function engineBenchPanel(name, e, type, sc, jvm) {
+  const color  = type === 'sc' ? 'var(--sc)'  : 'var(--jvm)';
+  const dimBg  = type === 'sc' ? 'var(--sc-dim)' : 'var(--jvm-dim)';
+  const other  = type === 'sc' ? jvm  : sc;
+  const p99Win = other ? e.p99_ms < other.p99_ms : null;
+  const maxMs  = Math.max(e.p99_ms, e.mean_ms) * 1.2 || 1;
+
+  return `
+    <div class="timing-card">
+      <div class="timing-card-hdr" style="background:${dimBg}">
+        <span class="timing-engine-name" style="color:${color}">${name}</span>
+        <span class="timing-ms" style="color:${color}">${fmt(e.p99_ms)}<span style="font-size:12px;font-weight:400;opacity:.6"> p99</span></span>
+      </div>
+      <div class="timing-rows">${e.row_count} row${e.row_count!==1?'s':''} · ${e.successful}/${e.runs} runs succeeded · 1 warm-up excluded${e.errors&&e.errors.length?` · <span style="color:#f85149">${e.errors.length} failed</span>`:''}</div>
+    </div>
+
+    <div>
+      <div class="bench-title" style="margin-bottom:8px">Latency (ms)</div>
+      <div class="timing-table-wrap">
+        <table class="timing-table">
+          <thead><tr><th>p99</th><th>Mean</th><th>Median</th><th>Min</th><th>Max</th><th>CPU%</th><th>Memory</th></tr></thead>
+          <tbody><tr>
+            <td style="color:${color};font-weight:700">${fmt(e.p99_ms)}</td>
+            <td>${fmt(e.mean_ms)}</td>
+            <td>${fmt(e.median_ms)}</td>
+            <td>${fmt(e.min_ms)}</td>
+            <td>${fmt(e.max_ms)}</td>
+            <td>${fmtCPU(e.cpu_pct)}</td>
+            <td>${fmtMB(e.rss_mb)}</td>
+          </tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div>
+      <div class="bench-title" style="margin-bottom:8px">Per-run timings</div>
+      ${sparkRow(name, e.timings, color, e.p99_ms)}
+    </div>
+
+    ${e.rows && e.rows.length ? renderTable(e.rows, 'Result') : ''}`;
+}
+
+function dualBar(label, scVal, jvmVal, max, fmtFn) {
+  const sp = Math.min(100, (scVal/max)*100);
+  const jp = Math.min(100, (jvmVal/max)*100);
+  return `<div style="display:flex;flex-direction:column;gap:3px">
+    <div class="bar-label" style="margin-bottom:2px">${label}</div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <span style="font-size:10px;color:var(--sc);width:72px;font-weight:600">Sail K8s</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${sp}%;background:var(--sc)">
+        ${sp>22?`<span class="bar-val">${fmtFn(scVal)}</span>`:''}
+      </div></div>
+      ${sp<=22?`<span class="bar-val-ext">${fmtFn(scVal)}</span>`:''}
+    </div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <span style="font-size:10px;color:var(--jvm);width:72px;font-weight:600">Spark JVM</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${jp}%;background:var(--jvm)">
+        ${jp>22?`<span class="bar-val">${fmtFn(jvmVal)}</span>`:''}
+      </div></div>
+      ${jp<=22?`<span class="bar-val-ext">${fmtFn(jvmVal)}</span>`:''}
+    </div>
+  </div>`;
+}
+
+function singleBar(label, val, max, color, fmtFn) {
+  const pct = max > 0 ? Math.min(100, (val/max)*100) : 0;
+  return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
+    <span style="font-size:10px;font-weight:600;color:${color};width:70px">${label}</span>
+    <div class="bar-track" style="height:13px">
+      <div class="bar-fill" style="width:${pct}%;background:${color}">
+        ${pct>28?`<span class="bar-val">${fmtFn(val)}</span>`:''}
+      </div>
+    </div>
+    ${pct<=28?`<span class="bar-val-ext">${fmtFn(val)}</span>`:''}
+  </div>`;
+}
+
+function sparkRow(label, timings, color, p99) {
+  if (!timings || !timings.length) return '';
+  const mx = Math.max(...timings);
+  const bars = timings.map(t => {
+    const h = mx > 0 ? Math.max(4, Math.round((t/mx)*26)) : 4;
+    return `<div class="spark-bar" style="height:${h}px;background:${color};opacity:.8" title="${t.toFixed(0)}ms"></div>`;
+  }).join('');
+  return `<div class="spark-row">
+    <span class="spark-engine" style="color:${color}">${label}</span>
+    <div class="spark-track">${bars}</div>
+    <span class="spark-summary">p99 ${fmt(p99)}</span>
+  </div>`;
+}
+
+// ── Resize handles ─────────────────────────────────────────────────────────
+(function() {
+  const sidebar  = document.getElementById('sidebar');
+  const sqlCode  = document.getElementById('sqlCode');
+  const rh = document.getElementById('resizerH');
+  const rv = document.getElementById('resizerV');
+
+  // Horizontal: sidebar width
+  let dragH = false, hStartX, hStartW;
+  rh.addEventListener('mousedown', e => {
+    dragH = true; hStartX = e.clientX; hStartW = sidebar.offsetWidth;
+    rh.classList.add('dragging');
+    document.body.style.cursor = 'ew-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  // Vertical: SQL code box height
+  let dragV = false, vStartY, vStartH;
+  rv.addEventListener('mousedown', e => {
+    dragV = true; vStartY = e.clientY; vStartH = sqlCode.offsetHeight;
+    rv.classList.add('dragging');
+    document.body.style.cursor = 'ns-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (dragH) {
+      const w = Math.max(140, Math.min(420, hStartW + (e.clientX - hStartX)));
+      sidebar.style.width = w + 'px';
+      sidebar.style.minWidth = w + 'px';
+    }
+    if (dragV) {
+      const h = Math.max(40, Math.min(400, vStartH + (e.clientY - vStartY)));
+      sqlCode.style.maxHeight = h + 'px';
+      sqlCode.style.height    = h + 'px';
+    }
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (dragH) { dragH = false; rh.classList.remove('dragging'); document.body.style.cursor = ''; document.body.style.userSelect = ''; }
+    if (dragV) { dragV = false; rv.classList.remove('dragging'); document.body.style.cursor = ''; document.body.style.userSelect = ''; }
+  });
+})();
+</script>

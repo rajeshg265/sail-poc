@@ -1,0 +1,5 @@
+FROM python:3.13-slim
+RUN pip install "pysail[jdbc]==0.7.2" "pyspark==4.2.0" --no-cache-dir \
+    && find /usr/local/lib/python*/site-packages/pyspark/jars -name "*.jar" -delete \
+    && find /usr/local/lib/python*/site-packages/pyspark/tests -name "*.py" -delete 2>/dev/null || true \
+    && find /usr/local/lib/python*/site-packages/pysail -name "*.jar" -delete 2>/dev/null || true

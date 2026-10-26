@@ -1,0 +1,44 @@
+#!/bin/bash
+# Spark K8s executor entrypoint.
+#
+# Spark's K8s launcher (BasicExecutorFeatureStep) sets container args to
+# ["executor"] and passes all configuration via environment variables:
+#   SPARK_DRIVER_URL, SPARK_EXECUTOR_CORES, SPARK_EXECUTOR_MEMORY,
+#   SPARK_APPLICATION_ID, SPARK_EXECUTOR_ID, SPARK_JAVA_OPT_N, ...
+#
+# This script reads those env vars and launches CoarseGrainedExecutorBackend.
+
+set -e
+
+PYSPARK_HOME=$(python3 -c "import pyspark, os; print(os.path.dirname(pyspark.__file__))")
+
+# Ensure SPARK_CONF_DIR exists (Spark sets this to /opt/spark/conf which doesn't exist here)
+export SPARK_CONF_DIR="${SPARK_CONF_DIR:-/tmp/spark-conf}"
+mkdir -p "${SPARK_CONF_DIR}"
+
+# Build classpath: Spark JARs + JDBC jar (same image, so always present)
+CLASSPATH="${PYSPARK_HOME}/jars/*:/app/lib/postgresql-42.7.2.jar"
+
+# Collect all SPARK_JAVA_OPT_N env vars (numbered JVM options set by Spark K8s)
+JAVA_OPTS=()
+for i in $(seq 0 100); do
+  varname="SPARK_JAVA_OPT_${i}"
+  val="${!varname}"
+  if [ -n "${val}" ]; then
+    JAVA_OPTS+=("${val}")
+  fi
+done
+
+MEM="${SPARK_EXECUTOR_MEMORY:-1024m}"
+
+exec java \
+  -Xms${MEM} \
+  -Xmx${MEM} \
+  "${JAVA_OPTS[@]}" \
+  -cp "${CLASSPATH}" \
+  org.apache.spark.executor.CoarseGrainedExecutorBackend \
+  --driver-url "${SPARK_DRIVER_URL}" \
+  --executor-id "${SPARK_EXECUTOR_ID}" \
+  --cores "${SPARK_EXECUTOR_CORES}" \
+  --app-id "${SPARK_APPLICATION_ID}" \
+  --resourceProfileId "${SPARK_RESOURCE_PROFILE_ID:-0}"
