@@ -1,0 +1,3 @@
+FROM python:3.13-slim
+RUN pip install "pysail[jdbc]==0.7.2" --no-cache-dir
+ENTRYPOINT ["python3", "-m", "pysail", "worker"]

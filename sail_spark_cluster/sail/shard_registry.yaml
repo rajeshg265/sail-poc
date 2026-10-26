@@ -1,0 +1,57 @@
+# Shard Registry — sail_spark_cluster
+#
+# Two time-range shards: cluster_shard1 (2024-2025) and cluster_shard2 (2026-2027).
+# Each shard holds frtb_sa_capital_output (~2.2M rows) and all broadcast tables.
+# Sail runs with SAIL_WORKER_COUNT=3 (local-cluster mode, 3 workers).
+# Spark JVM runs with local-cluster[3,1,1024] (3 executor JVMs, 1 core each).
+
+shards:
+  cluster_shard1:
+    host: localhost
+    port: 6440            # pgpool → TimescaleDB cluster_shard1:5450
+    database: cluster_shard1
+    key_range:
+      from: "2024-01-01"
+      to:   "2025-12-31"
+
+  cluster_shard2:
+    host: localhost
+    port: 6441            # pgpool → TimescaleDB cluster_shard2:5451
+    database: cluster_shard2
+    key_range:
+      from: "2026-01-01"
+      to:   "2027-12-31"
+
+datasets:
+  - name: frtb_sa_capital_output
+    table: public.frtb_sa_capital_output
+    shard_key: cobdate
+    shards: [cluster_shard1, cluster_shard2]
+    partition_column: legal_entity_group_id
+    partition_lower_bound: 1
+    partition_upper_bound: 50
+    # num_partitions=3: integer column, no date pushdown bug; 3/shard × 2 shards = 6 parallel reads.
+    num_partitions: 3
+
+broadcast_tables:
+  - name: cobdate
+    table: public.cobdate
+    source_shard: cluster_shard1
+
+  - name: entity_hierarchy
+    table: public.entity_hierarchy
+    source_shard: cluster_shard1
+
+  - name: chorushierarchy
+    table: public.chorushierarchy
+    source_shard: cluster_shard1
+
+  - name: vw_pillar_node_mapping
+    table: public.vw_pillar_node_mapping
+    source_shard: cluster_shard1
+
+credentials:
+  cluster_shard1_user_secret:  FRTB_CLUSTER_SHARD1_DB_USER
+  cluster_shard1_pass_secret:  FRTB_CLUSTER_SHARD1_DB_PASSWORD
+  cluster_shard2_user_secret:  FRTB_CLUSTER_SHARD2_DB_USER
+  cluster_shard2_pass_secret:  FRTB_CLUSTER_SHARD2_DB_PASSWORD
